@@ -65,19 +65,12 @@ python voice_transcriber.py --file your_audio.wav
 
 ### 1. Create a shell launcher
 
-Create `~/run_transcriber.sh`:
-
-```bash
-#!/bin/bash
-source /home/<your-username>/.virtualenvs/whisper/bin/activate
-cd /home/<your-username>/<path-to-repo>
-python voice_transcriber.py
-```
+Modify `run_transcriber.sh` to fit your path.
 
 Make it executable:
 
 ```bash
-chmod +x ~/run_transcriber.sh
+chmod +x ~/voice2chatgpt/run_transcriber.sh
 ```
 
 ### 2. (optional) Create a desktop shortcut
