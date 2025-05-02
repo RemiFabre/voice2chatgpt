@@ -1,71 +1,160 @@
-Perfect — here's a clean and minimal **README.md** you can include alongside your project to **document the working setup**, make it repeatable, and clarify what worked.
+# Voice Transcriber (Whisper + Hotkey)
+
+This project turns your computer into a hotkey-triggered voice transcriber powered by Whisper. It captures your speech with a single keyboard shortcut, transcribes it locally using Whisper (via Faster-Whisper), and displays the result in the terminal. It's designed to work fully offline and fast.
+
+## Features
+
+* Hotkey-triggered recording
+* Local Whisper transcription (via Faster-Whisper)
+* Real-time mic level bar in terminal
+* Optionally normalize text
 
 ---
 
-````markdown
-# 🐍 Whisper GPU Transcription Environment (CUDA 11.5 + cuDNN 8.3.2) (old versions that work on my ThinkPad)
+## 🔧 Installation (Linux)
 
-This setup enables **faster-whisper** with full GPU acceleration on a system running:
-- **CUDA 11.5**
-- **cuDNN 8.3.2**
-- **Python 3.10**
-- A compatible NVIDIA GPU (e.g., RTX A2000 Mobile)
-
-## ✅ Setup Instructions
-
-### 1. Create and activate the virtual environment
+### 1. Clone the repo
 
 ```bash
-python3 -m venv whisper
-source whisper/bin/activate
-pip install --upgrade pip
-````
+git clone git@github.com:RemiFabre/voice2chatgpt.git
+cd voice2chatgpt
+```
 
-### 2. Install dependencies
+### 2. Create and activate virtual environment
+
+```bash
+python3 -m venv ~/.virtualenvs/whisper
+source ~/.virtualenvs/whisper/bin/activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
+# or, manually:
+pip install faster-whisper sounddevice soundfile numpy pynput
 ```
 
-> The `requirements.txt` file was generated with a fully working configuration (see below).
-
-### 3. Run a transcription
-
-```python
-from faster_whisper import WhisperModel
-
-model = WhisperModel("medium", device="cuda", compute_type="float16")
-segments, info = model.transcribe("your_audio.wav")
-
-print("Detected language:", info.language)
-for segment in segments:
-    print(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
-```
-
-## 📁 Included Files
-
-* `requirements.txt`: exact working versions of all Python packages
-* `main.py`: example script to run transcription
-* `README.md`: this file
-
-## 💡 Notes
-
-* You **do not need to set `PATH` or `LD_LIBRARY_PATH` manually** if your CUDA 11.5 and cuDNN 8.3.2 libraries are installed in system paths (e.g., `/usr/lib/x86_64-linux-gnu/`).
-* Make sure no conflicting global versions of `onnxruntime` are installed.
-* Tested with:
-
-  * `onnxruntime-gpu==1.14.1`
-  * `ctranslate2==3.24.0`
-  * `faster-whisper==0.3.0`
-  * `numpy==1.26.4`
-
-## ♻️ To regenerate the environment
+> ⚠️ Optional: If you want to enable normalization (not that useful):
 
 ```bash
-python3 -m venv whisper
-source whisper/bin/activate
-pip install -r requirements.txt
+pip install git+https://github.com/openai/whisper.git
 ```
 
-Then run `main.py` or your custom scripts.
+---
 
+## 🎙️ Running the tool manually
+
+From inside your virtualenv:
+
+```bash
+python voice_transcriber.py
+```
+
+Then just talk. Press `Ctrl+C` to stop and get the transcript.
+
+You can also transcribe an existing `.wav` file:
+
+```bash
+python voice_transcriber.py --file your_audio.wav
+```
+
+---
+
+## ⌨️ Set up a global hotkey (Ubuntu/Linux)
+
+### 1. Create a shell launcher
+
+Create `~/run_transcriber.sh`:
+
+```bash
+#!/bin/bash
+source /home/<your-username>/.virtualenvs/whisper/bin/activate
+cd /home/<your-username>/<path-to-repo>
+python voice_transcriber.py
+```
+
+Make it executable:
+
+```bash
+chmod +x ~/run_transcriber.sh
+```
+
+### 2. (optional) Create a desktop shortcut
+
+Create the file:
+
+```bash
+~/.local/share/applications/voice-transcriber.desktop
+```
+
+With content (adapt Exec path):
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=Voice Transcriber
+Exec=/home/remi/voice2chatgpt/run_transcriber.sh
+Icon=utilities-terminal
+Terminal=true
+```
+
+Then update your local desktop database:
+
+```bash
+update-desktop-database ~/.local/share/applications
+```
+
+### 3. Bind the shortcut
+
+Go to:
+
+```
+Settings → Keyboard → Custom Shortcuts
+```
+
+Add (adapt command path):
+
+* Name: `Voice Transcriber`
+* Command: `/home/remi/voice2chatgpt/run_transcriber.sh`
+* Shortcut: for example, `Ctrl+Alt+Space`
+
+---
+
+## 🛠️ Configurable options
+
+In `voice_transcriber.py`:
+
+* `USE_NORMALIZER`: Set to `True` to clean punctuation and casing
+* `SAMPLERATE`, `CHANNELS`: Customize recording fidelity
+* `BAR_WIDTH`: Width of the real-time mic bar
+
+---
+
+## 🧪 Notes
+
+* Output is saved in `transcription.txt`
+* Input audio is saved as `recorded.wav`
+* Uses Whisper's `medium` model by default (can be changed in code)
+* Real-time factor is printed to evaluate performance
+
+---
+
+## 🧼 .gitignore recommendation
+
+Include `*.wav`, `*.txt`, and `voice_log.txt` to avoid cluttering the repo.
+
+---
+
+## ✅ Tested With
+
+* Ubuntu 22.04 LTS
+* Python 3.10
+* NVIDIA GPU (CUDA-accelerated Faster-Whisper)
+* Terminal: Terminator or Gnome Terminal
+
+---
+
+## License
+
+MIT
