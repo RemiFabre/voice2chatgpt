@@ -1,134 +1,175 @@
 import sounddevice as sd
 import soundfile as sf
-from faster_whisper import WhisperModel
 import numpy as np
 import os
-import time
-import argparse
-import signal
-import sys
 import threading
-import shutil
-
-# Optional normalizer (manual install required)
-try:
-    from whisper.normalizers.english import EnglishTextNormalizer
-    NORMALIZER_AVAILABLE = True
-    normalizer = EnglishTextNormalizer()
-except ImportError:
-    NORMALIZER_AVAILABLE = False
-    normalizer = lambda x: x
+import queue
+import time
+import webbrowser
+import pyperclip
+import pyautogui
+from pynput import keyboard as pynput_keyboard
+from faster_whisper import WhisperModel
 
 # === CONFIG ===
-AUDIO_FILENAME = "recorded.wav"
-TEXT_FILENAME = "transcription.txt"
-SAMPLERATE = 16000
+SAMPLE_RATE = 16000
 CHANNELS = 1
-USE_NORMALIZER = False  # Set to False to disable punctuation cleanup
-BAR_WIDTH = 30
+RECORDING_FILENAME = "recorded.wav"
+TRANSCRIPTION_FILENAME = "transcription.txt"
+MODEL_SIZE = "medium"
+DEVICE = "cuda"
+COMPUTE_TYPE = "float16"
+MIC_BAR_WIDTH = 30
 
-# === STATE ===
-audio_buffer = []
-record_start_time = None
+# === Globals ===
 recording = True
-last_volume_bar = ""
+duration_sec = 0
+action_chosen = None
 
-def callback(indata, frames, time_info, status):
-    global last_volume_bar
-    if recording:
-        audio_buffer.append(indata.copy())
-        rms = np.sqrt(np.mean(indata**2))
-        bar_length = min(int(rms * BAR_WIDTH * 10), BAR_WIDTH)
-        volume_bar = "[" + "█" * bar_length + " " * (BAR_WIDTH - bar_length) + "]"
-        if volume_bar != last_volume_bar:
-            print(f"\r🎙️ Mic Level: {volume_bar}", end="", flush=True)
-            last_volume_bar = volume_bar
 
-def start_immediate_recording():
-    global audio_buffer, record_start_time
-    audio_buffer = []
-    record_start_time = time.time()
-    print("🎙️  Recording started. Press Ctrl+C to stop.")
+def audio_callback(indata, frames, time_info, status):
+    if status:
+        print(status, flush=True)
+    volume_norm = np.linalg.norm(indata) / len(indata)
+    level = min(int(volume_norm * 100 * MIC_BAR_WIDTH), MIC_BAR_WIDTH)
+    bar = "█" * level + " " * (MIC_BAR_WIDTH - level)
+    print(f"\r🎙️ Mic Level: [{bar}]", end="", flush=True)
 
-    try:
-        with sd.InputStream(samplerate=SAMPLERATE, channels=CHANNELS, callback=callback):
-            while recording:
-                sd.sleep(100)
-    except Exception as e:
-        print(f"❌ Recording error: {e}")
 
-def transcribe_file(input_file, duration_sec=None):
-    print("\n🧠 Transcribing...")
-    overall_start = time.time()
-    model = WhisperModel("medium", device="cuda", compute_type="float16")
-    segments, _ = model.transcribe(
-        input_file,
-        beam_size=5,
-        best_of=5
-    )
-    raw_text = " ".join([seg.text for seg in segments])
+def record_audio(filename):
+    global duration_sec, recording
+    q = queue.Queue()
 
-    norm_start = time.time()
-    if USE_NORMALIZER and NORMALIZER_AVAILABLE:
-        normalized_text = normalizer(raw_text)
-    else:
-        normalized_text = raw_text
-    norm_end = time.time()
+    def _callback(indata, frames, time_info, status):
+        q.put(indata.copy())
+        audio_callback(indata, frames, time_info, status)
 
-    with open(TEXT_FILENAME, "w", encoding="utf-8") as f:
-        f.write(normalized_text)
+    with sf.SoundFile(filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS) as file:
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=_callback):
+            print("\n🎤 Recording started.")
+            print("Press:")
+            print("  1 – Show transcription")
+            print("  2 – Send to ChatGPT")
+            print("  3 – Copy to clipboard")
+            print("  4 – Save and exit")
+            print("  5 – Cancel (discard)")
+            print("Or press Ctrl+C to stop and choose after.")
+            start_time = time.time()
+            try:
+                while recording:
+                    file.write(q.get())
+            except KeyboardInterrupt:
+                print("\n🛑 Recording interrupted by Ctrl+C.")
+            finally:
+                duration_sec = time.time() - start_time
+                recording = False
+                print("\n🎤 Recording stopped.")
 
-    overall_end = time.time()
 
-    transcript_duration = overall_end - overall_start
-    normalization_time = norm_end - norm_start
-    text_length = len(normalized_text)
+def transcribe_audio(filename):
+    print("🧠 Transcribing...")
+    model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+    start = time.time()
+    segments, info = model.transcribe(filename, beam_size=5, best_of=5)
+    end = time.time()
+    text = " ".join([seg.text for seg in segments])
+    rtf = (end - start) / duration_sec
     print("📝 Transcription complete.\n")
-    print(normalized_text)
+    print(text)
     print("\n📊 Stats:")
-    if duration_sec is not None:
-        print(f" - Input duration       : {duration_sec:.2f} seconds")
-        print(f" - Real-time factor     : {transcript_duration / duration_sec:.2f}x")
-    print(f" - Transcription time   : {transcript_duration:.2f} seconds")
-    print(f" - Normalization time   : {normalization_time:.4f} seconds")
-    print(f" - Output text length   : {text_length} characters")
-    print(f" - Saved to             : {TEXT_FILENAME}")
+    print(f" - Input duration       : {duration_sec:.2f} seconds")
+    print(f" - Real-time factor     : {rtf:.2f}x")
+    print(f" - Transcription time   : {end - start:.2f} seconds")
+    print(f" - Output text length   : {len(text)} characters")
+    print(f" - Saved to             : {TRANSCRIPTION_FILENAME}")
+    with open(TRANSCRIPTION_FILENAME, "w") as f:
+        f.write(text)
+    return text
 
-    if USE_NORMALIZER:
-        print("\n📋 Comparison:")
-        print("Raw transcription:")
-        print(raw_text)
 
-    if USE_NORMALIZER and not NORMALIZER_AVAILABLE:
-        print("⚠️  Normalizer is enabled but not available. Run:\n  pip install git+https://github.com/openai/whisper.git")
+def send_to_chatgpt(text):
+    print("🌐 Opening ChatGPT and pasting text...")
+    webbrowser.get("firefox").open_new_tab("https://chat.openai.com/")
+    time.sleep(5)
+    pyperclip.copy(text)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.2)
+    pyautogui.press("enter")
 
-def stop_and_transcribe():
-    global recording
-    recording = False
-    record_end_time = time.time()
-    duration_sec = record_end_time - record_start_time
-    print(f"\n🛑 Recording stopped. Duration: {duration_sec:.2f} seconds")
 
-    audio_data = np.concatenate(audio_buffer, axis=0)
-    sf.write(AUDIO_FILENAME, audio_data, SAMPLERATE)
+def handle_key_input_during_recording():
+    global action_chosen, recording
 
-    transcribe_file(AUDIO_FILENAME, duration_sec)
+    def on_press(key):
+        global action_chosen, recording
+        try:
+            if key.char == '1':
+                action_chosen = 1
+                recording = False
+            elif key.char == '2':
+                action_chosen = 2
+                recording = False
+            elif key.char == '3':
+                action_chosen = 3
+                recording = False
+            elif key.char == '4':
+                action_chosen = 4
+                recording = False
+            elif key.char == '5':
+                action_chosen = 5
+                recording = False
+        except AttributeError:
+            pass
 
-def handle_exit(signum, frame):
-    stop_and_transcribe()
+    listener = pynput_keyboard.Listener(on_press=on_press)
+    listener.start()
+    while recording:
+        time.sleep(0.1)
+    listener.stop()
+
+
+def post_transcription_menu(text):
+    global action_chosen
+    if action_chosen is None:
+        print("\nWhat would you like to do?")
+        print("1. Show transcription (default)")
+        print("2. Send to ChatGPT")
+        print("3. Copy to clipboard")
+        print("4. Save and exit")
+        print("5. Cancel (discard)")
+        choice = input("Choose (1–5): ").strip()
+        action_chosen = int(choice) if choice in '12345' else 1
+
+    if action_chosen == 1:
+        print("\n📄 Transcription:\n")
+        print(text)
+    elif action_chosen == 2:
+        send_to_chatgpt(text)
+    elif action_chosen == 3:
+        pyperclip.copy(text)
+        print("📋 Copied to clipboard.")
+    elif action_chosen == 4:
+        print("💾 Saved and done.")
+    elif action_chosen == 5:
+        print("❌ Discarded.")
+        try:
+            os.remove(TRANSCRIPTION_FILENAME)
+        except FileNotFoundError:
+            pass
+
+
+def main():
+    recorder = threading.Thread(target=record_audio, args=(RECORDING_FILENAME,))
+    hotkeys = threading.Thread(target=handle_key_input_during_recording)
+    recorder.start()
+    hotkeys.start()
+    recorder.join()
+    hotkeys.join()
+
+    if os.path.exists(RECORDING_FILENAME):
+        text = transcribe_audio(RECORDING_FILENAME)
+        post_transcription_menu(text)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Voice transcriber using faster-whisper")
-    parser.add_argument("--file", type=str, help="Optional input WAV file to transcribe directly")
-    args = parser.parse_args()
-
-    if args.file:
-        if not os.path.isfile(args.file):
-            print(f"❌ File not found: {args.file}")
-        else:
-            duration = sf.info(args.file).duration
-            transcribe_file(args.file, duration_sec=duration)
-    else:
-        signal.signal(signal.SIGINT, handle_exit)
-        signal.signal(signal.SIGTERM, handle_exit)
-        start_immediate_recording()
+    main()
