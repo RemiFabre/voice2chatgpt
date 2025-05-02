@@ -1,13 +1,21 @@
-# Voice Transcriber (Whisper + Hotkey)
+# voice2chatgpt (Whisper + Hotkey + ChatGPT)
 
-This project turns your computer into a hotkey-triggered voice transcriber powered by Whisper. It captures your speech with a single keyboard shortcut, transcribes it locally using Whisper (via Faster-Whisper), and displays the result in the terminal. It's designed to work fully offline and fast.
+This project turns your computer into a hotkey-triggered voice transcriber powered by Whisper. It captures your speech with a single keyboard shortcut, transcribes it locally using Whisper (via Faster-Whisper), and displays the result in the terminal or sends it to ChatGPT. It's designed to work fully offline and fast.
 
 ## Features
 
 * Hotkey-triggered recording
 * Local Whisper transcription (via Faster-Whisper)
-* Real-time mic level bar in terminal
-* Optionally normalize text
+* Real-time mic level bar in terminal + live duration
+* Press keys `1`–`5` during or after recording to choose what to do:
+  * `1` – Show transcription
+  * `2` – Send to ChatGPT (opens Firefox, pastes & submits)
+  * `3` – Copy to clipboard
+  * `4` – Save and exit
+  * `5` – Cancel and discard
+* Live keypress debug display (shows unknown key codes)
+* Compatible with QWERTY, AZERTY, and numpad layouts
+* Optionally normalize text (punctuation & casing)
 
 ---
 
@@ -18,7 +26,7 @@ This project turns your computer into a hotkey-triggered voice transcriber power
 ```bash
 git clone git@github.com:RemiFabre/voice2chatgpt.git
 cd voice2chatgpt
-```
+````
 
 ### 2. Create and activate virtual environment
 
@@ -32,7 +40,7 @@ source ~/.virtualenvs/whisper/bin/activate
 ```bash
 pip install -r requirements.txt
 # or, manually:
-pip install faster-whisper sounddevice soundfile numpy pynput
+pip install faster-whisper sounddevice soundfile numpy pynput pyperclip pyautogui
 ```
 
 > ⚠️ Optional: If you want to enable normalization (not that useful):
@@ -51,7 +59,14 @@ From inside your virtualenv:
 python voice_transcriber.py
 ```
 
-Then just talk. Press `Ctrl+C` to stop and get the transcript.
+Then just talk. The script will show your mic level and elapsed time.
+Press `1`–`5` *during* or *after* the recording to:
+
+* Show transcription
+* Send it to ChatGPT (in Firefox)
+* Copy to clipboard
+* Save
+* Cancel
 
 You can also transcribe an existing `.wav` file:
 
@@ -118,9 +133,10 @@ Add (adapt command path):
 
 In `voice_transcriber.py`:
 
+* `MODEL_SIZE`: Change from `"medium"` to `"small"` for faster speed
 * `USE_NORMALIZER`: Set to `True` to clean punctuation and casing
-* `SAMPLERATE`, `CHANNELS`: Customize recording fidelity
-* `BAR_WIDTH`: Width of the real-time mic bar
+* `SAMPLE_RATE`, `CHANNELS`: Customize recording fidelity
+* `MIC_BAR_WIDTH`: Width of the real-time mic bar
 
 ---
 
@@ -128,14 +144,21 @@ In `voice_transcriber.py`:
 
 * Output is saved in `transcription.txt`
 * Input audio is saved as `recorded.wav`
-* Uses Whisper's `medium` model by default (can be changed in code)
-* Real-time factor is printed to evaluate performance
+* Works even offline (if models are pre-cached)
+* Prints real-time factor and durations
+* On unknown keyboard layouts, raw key codes like `<65437>` are printed — you can add support easily by extending `key_map`
 
 ---
 
 ## 🧼 .gitignore recommendation
 
-Include `*.wav`, `*.txt`, and `voice_log.txt` to avoid cluttering the repo.
+Include:
+
+```
+*.wav
+*.txt
+voice_log.txt
+```
 
 ---
 
@@ -144,6 +167,8 @@ Include `*.wav`, `*.txt`, and `voice_log.txt` to avoid cluttering the repo.
 * Ubuntu 22.04 LTS
 * Python 3.10
 * NVIDIA GPU (CUDA-accelerated Faster-Whisper)
+* AZERTY & QWERTY keyboard layouts
+* Firefox (for ChatGPT integration)
 * Terminal: Terminator or Gnome Terminal
 
 ---

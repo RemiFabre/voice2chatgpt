@@ -24,20 +24,24 @@ MIC_BAR_WIDTH = 30
 # === Globals ===
 recording = True
 duration_sec = 0
+start_time = None
 action_chosen = None
+callback_enabled = True
 
 
 def audio_callback(indata, frames, time_info, status):
-    if status:
-        print(status, flush=True)
+    global callback_enabled
+    if not callback_enabled:
+        return
     volume_norm = np.linalg.norm(indata) / len(indata)
     level = min(int(volume_norm * 100 * MIC_BAR_WIDTH), MIC_BAR_WIDTH)
     bar = "█" * level + " " * (MIC_BAR_WIDTH - level)
-    print(f"\r🎙️ Mic Level: [{bar}]", end="", flush=True)
+    elapsed = time.time() - start_time if start_time else 0
+    print(f"\r🎙️ {elapsed:5.1f}s [{bar}]", end="", flush=True)
 
 
 def record_audio(filename):
-    global duration_sec, recording
+    global duration_sec, recording, callback_enabled, start_time
     q = queue.Queue()
 
     def _callback(indata, frames, time_info, status):
@@ -52,17 +56,20 @@ def record_audio(filename):
             print("  2 – Send to ChatGPT")
             print("  3 – Copy to clipboard")
             print("  4 – Save and exit")
-            print("  5 – Cancel (discard)")
-            print("Or press Ctrl+C to stop and choose after.")
+            print("  5 – Cancel (discard and stop immediately)")
+            print("🔍 Press any key to debug its value.\n")
+
             start_time = time.time()
             try:
                 while recording:
-                    file.write(q.get())
-            except KeyboardInterrupt:
-                print("\n🛑 Recording interrupted by Ctrl+C.")
+                    try:
+                        file.write(q.get(timeout=0.1))
+                    except queue.Empty:
+                        continue
             finally:
                 duration_sec = time.time() - start_time
-                recording = False
+                callback_enabled = False
+                print("\r" + " " * (MIC_BAR_WIDTH + 20), end="\r", flush=True)
                 print("\n🎤 Recording stopped.")
 
 
@@ -96,35 +103,42 @@ def send_to_chatgpt(text):
     time.sleep(0.2)
     pyautogui.press("enter")
 
-
 def handle_key_input_during_recording():
     global action_chosen, recording
 
     def on_press(key):
         global action_chosen, recording
-        try:
-            if key.char == '1':
-                action_chosen = 1
-                recording = False
-            elif key.char == '2':
-                action_chosen = 2
-                recording = False
-            elif key.char == '3':
-                action_chosen = 3
-                recording = False
-            elif key.char == '4':
-                action_chosen = 4
-                recording = False
-            elif key.char == '5':
-                action_chosen = 5
-                recording = False
-        except AttributeError:
-            pass
+        k_repr = repr(key)
+        print(f"\n🔍 Pressed key: {k_repr}")
+
+        key_map = {
+            '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
+        }
+
+        # Char-based keys
+        if hasattr(key, 'char') and key.char in key_map:
+            action_chosen = key_map[key.char]
+            recording = False
+            return
+
+        # Raw repr fallback (for AZERTY '5')
+        if k_repr in ['<65437>']:
+            action_chosen = 5
+            recording = False
+            return
+
+        # vk fallback for numpad/others
+        vk_map = {
+            97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5
+        }
+        if hasattr(key, 'vk') and key.vk in vk_map:
+            action_chosen = vk_map[key.vk]
+            recording = False
 
     listener = pynput_keyboard.Listener(on_press=on_press)
     listener.start()
     while recording:
-        time.sleep(0.1)
+        time.sleep(0.05)
     listener.stop()
 
 
@@ -167,6 +181,9 @@ def main():
     hotkeys.join()
 
     if os.path.exists(RECORDING_FILENAME):
+        if action_chosen == 5:
+            print("❌ Aborted before transcription.")
+            return
         text = transcribe_audio(RECORDING_FILENAME)
         post_transcription_menu(text)
 
