@@ -68,7 +68,7 @@ def record_audio(filename):
 
     with sf.SoundFile(filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS) as file:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=_callback):
-            playsound("sounds/beep.wav")
+            playsound("sounds/plop.wav")
             print("\n🎤 Recording started.")
             print("Press:")
             print("  1 – Show transcription")
@@ -76,7 +76,7 @@ def record_audio(filename):
             print("  3 – Copy to clipboard")
             print("  4 – Save and exit")
             print("  5 – Cancel (discard and stop immediately)")
-            print("🔍 Press any key to debug its value.\n")
+            print("All modes copy the text to your clipboard\n")
 
             start_time = time.time()
             try:
@@ -98,6 +98,10 @@ def transcribe_audio(filename):
     segments, info = model.transcribe(filename, beam_size=5, best_of=5)
     end = time.time()
     text = " ".join([seg.text for seg in segments])
+    
+    pyperclip.copy(text)
+    print("📋 Copied to clipboard.")
+    playsound("sounds/plop.wav")
 
     global duration_sec
     if duration_sec == 0:
@@ -132,7 +136,7 @@ def handle_key_input_during_recording():
     def on_press(key):
         global action_chosen, recording
         k_repr = repr(key)
-        print(f"\n🔍 Pressed key: {k_repr}")
+        # print(f"\n🔍 Pressed key: {k_repr}")
 
         key_map = {
             '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
