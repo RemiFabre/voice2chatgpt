@@ -9,6 +9,8 @@ import webbrowser
 import pyperclip
 import pyautogui
 import subprocess
+import requests
+import json
 from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
 from playsound import playsound
@@ -23,6 +25,8 @@ DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 MIC_BAR_WIDTH = 30
 CHATGPT_ICON_IMAGE = "assets/chatgpt_plus.jpeg"
+OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "gemma:2b"
 
 # === Globals ===
 recording = True
@@ -35,6 +39,7 @@ TRANSCRIPTION_FILENAME = "transcription.txt"
 current_audio_path = None
 current_transcript_path = None
 
+
 def generate_paths():
     now = datetime.now()
     base_folder = os.path.join("recordings", now.strftime("%Y-%m-%d"), now.strftime("%H-%M-%S"))
@@ -43,6 +48,7 @@ def generate_paths():
     current_audio_path = os.path.join(base_folder, "audio.wav")
     current_transcript_path = os.path.join(base_folder, "transcript.txt")
     return current_audio_path
+
 
 def print_help():
     print("""
@@ -58,10 +64,11 @@ NOTES:
     1: Show transcription
     2: Paste into ChatGPT (existing tab)
     3: Open ChatGPT and paste
-    4: Save and exit
+    4: Improve and rename with local LLM
     5: Cancel
 - 📋 Text will always be copied to clipboard automatically.
 """)
+
 
 def audio_callback(indata, frames, time_info, status):
     global callback_enabled
@@ -72,6 +79,7 @@ def audio_callback(indata, frames, time_info, status):
     bar = "█" * level + " " * (MIC_BAR_WIDTH - level)
     elapsed = time.time() - start_time if start_time else 0
     print(f"\r🎤 {elapsed:5.1f}s [{bar}]", end="", flush=True)
+
 
 def record_audio(filename):
     global duration_sec, recording, callback_enabled, start_time
@@ -89,7 +97,7 @@ def record_audio(filename):
             print("  1 – Show transcription")
             print("  2 – Paste into ChatGPT (existing tab)")
             print("  3 – Open ChatGPT and paste")
-            print("  4 – Save and exit")
+            print("  4 – Improve and rename with local LLM")
             print("  5 – Cancel (discard and stop immediately)")
             print("📋 Text will always be copied to clipboard.\n")
 
@@ -105,6 +113,7 @@ def record_audio(filename):
                 callback_enabled = False
                 print("\r" + " " * (MIC_BAR_WIDTH + 20), end="\r", flush=True)
                 print("\n🎤 Recording stopped.")
+
 
 def focus_and_click_chatgpt_input(timeout=5):
     try:
@@ -123,6 +132,7 @@ def focus_and_click_chatgpt_input(timeout=5):
     except Exception as e:
         print(f"⚠️ Input focus failed: {e}")
         return False
+
 
 def transcribe_audio(filename):
     print("🧠 Transcribing...")
@@ -154,6 +164,7 @@ def transcribe_audio(filename):
         f.write(text)
     return text
 
+
 def send_to_existing_chatgpt(text):
     print("📨 Focusing Firefox window...")
     try:
@@ -168,18 +179,43 @@ def send_to_existing_chatgpt(text):
     except Exception as e:
         print(f"❌ Failed to interact with Firefox: {e}")
 
+
 def send_to_new_chatgpt(text):
     print("🌐 Opening ChatGPT...")
     webbrowser.get("firefox").open_new_tab("https://chat.openai.com/")
     found = focus_and_click_chatgpt_input(timeout=5)
     time.sleep(0.5)
-    
-        
     pyautogui.hotkey("ctrl", "v")
     time.sleep(0.2)
     pyautogui.press("enter")
     if not found:
         print("⚠️ Input box not detected, pasted anyway.")
+
+
+def call_llm(text):
+    prompt = f"""You are a helpful assistant. Please:
+1. Re-punctuate the text below correctly.
+2. Suggest a short filename based on the content (in CamelCase).
+3. Return both in JSON with 'punctuated_text' and 'suggested_filename'.
+
+Text:
+{text}
+"""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False
+    }
+    print("🤖 Calling local LLM...")
+    try:
+        res = requests.post(OLLAMA_URL, json=payload)
+        raw = res.json().get("response", "{}")
+        data = json.loads(raw.split("```json")[-1].split("```")[0].strip()) if "```" in raw else json.loads(raw)
+        return data.get("punctuated_text", text), data.get("suggested_filename")
+    except Exception as e:
+        print(f"⚠️ LLM error: {e}")
+        return text, None
+
 
 def handle_key_input_during_recording():
     global action_chosen, recording
@@ -200,14 +236,15 @@ def handle_key_input_during_recording():
         time.sleep(0.05)
     listener.stop()
 
+
 def post_transcription_menu(text):
-    global action_chosen
+    global action_chosen, current_audio_path, current_transcript_path
     if action_chosen is None:
         print("\nWhat would you like to do?")
         print("1. Show transcription (default)")
         print("2. Paste into ChatGPT (existing tab)")
         print("3. Open ChatGPT and paste")
-        print("4. Save and exit")
+        print("4. Improve and rename with local LLM")
         print("5. Cancel (discard)")
         choice = input("Choose (1–5): ").strip()
         action_chosen = int(choice) if choice in '12345' else 1
@@ -222,7 +259,18 @@ def post_transcription_menu(text):
     elif action_chosen == 3:
         send_to_new_chatgpt(text)
     elif action_chosen == 4:
-        print("📅 Saved and done.")
+        new_text, new_name = call_llm(text)
+        print("\n✨ Enhanced Text:\n")
+        print(new_text)
+        pyperclip.copy(new_text)
+        print("📋 Copied enhanced version to clipboard.")
+        playsound("sounds/plop.wav")
+        if new_name:
+            folder = os.path.dirname(current_audio_path)
+            base = os.path.dirname(folder)
+            renamed = os.path.join(base, f"{os.path.basename(folder)}_{new_name}")
+            os.rename(folder, renamed)
+            print(f"📁 Folder renamed to: {renamed}")
     elif action_chosen == 5:
         print("❌ Discarded.")
         try:
@@ -230,6 +278,7 @@ def post_transcription_menu(text):
             os.remove(current_transcript_path)
         except FileNotFoundError:
             pass
+
 
 def main():
     if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
@@ -256,6 +305,7 @@ def main():
             return
         text = transcribe_audio(filename)
         post_transcription_menu(text)
+
 
 if __name__ == "__main__":
     main()
