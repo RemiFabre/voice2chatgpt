@@ -2,6 +2,7 @@ import sounddevice as sd
 import soundfile as sf
 import numpy as np
 import os
+import sys
 import threading
 import queue
 import time
@@ -10,6 +11,7 @@ import pyperclip
 import pyautogui
 from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
+from playsound import playsound
 
 # === CONFIG ===
 SAMPLE_RATE = 16000
@@ -50,6 +52,7 @@ def record_audio(filename):
 
     with sf.SoundFile(filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS) as file:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=_callback):
+            playsound("sounds/beep.wav")
             print("\n🎤 Recording started.")
             print("Press:")
             print("  1 – Show transcription")
@@ -80,7 +83,13 @@ def transcribe_audio(filename):
     segments, info = model.transcribe(filename, beam_size=5, best_of=5)
     end = time.time()
     text = " ".join([seg.text for seg in segments])
-    rtf = (end - start) / duration_sec
+    if duration_sec == 0:
+        import soundfile as sf
+        with sf.SoundFile(filename) as f:
+            file_duration = len(f) / f.samplerate
+        rtf = (end - start) / file_duration
+    else:
+        rtf = (end - start) / duration_sec
     print("📝 Transcription complete.\n")
     print(text)
     print("\n📊 Stats:")
@@ -172,7 +181,38 @@ def post_transcription_menu(text):
             pass
 
 
+def print_help():
+    print("""
+🎙️ voice_transcriber.py - Record or transcribe voice audio using Whisper
+
+USAGE:
+  python3 voice_transcriber.py                   # Start recording interactively
+  python3 voice_transcriber.py <audio_file.wav>  # Transcribe existing file (no recording)
+  python3 voice_transcriber.py --help            # Show this help message
+
+NOTES:
+- Press 1–5 during recording to choose action:
+    1: Show transcription
+    2: Send to ChatGPT (autotype)
+    3: Copy to clipboard
+    4: Save and exit
+    5: Cancel
+""")
+
+
 def main():
+    # If --help or -h or too many args
+    if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
+        print_help()
+        return
+
+    # If user provides an audio file to transcribe directly
+    if len(sys.argv) == 2 and os.path.isfile(sys.argv[1]):
+        text = transcribe_audio(sys.argv[1])
+        post_transcription_menu(text)
+        return
+
+    # Default interactive recording flow
     recorder = threading.Thread(target=record_audio, args=(RECORDING_FILENAME,))
     hotkeys = threading.Thread(target=handle_key_input_during_recording)
     recorder.start()
