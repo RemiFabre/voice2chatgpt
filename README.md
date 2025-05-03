@@ -1,151 +1,159 @@
-# 🎙️ voice2chatgpt
+# 🎙️ Voice2ChatGPT
 
-**voice2chatgpt** is a voice-to-text transcription and interaction assistant powered by Whisper and optionally a local LLM (like `gemma:2b` via Ollama). It copies transcriptions to the clipboard and can optionally interact with ChatGPT.
+**Instant voice capture for transcription, clipboard, and ChatGPT interaction – all in one keypress.**
+
+## 🚀 Main Use Case
+
+This tool makes it **effortless** to capture voice notes or ideas during your workflow. You hit a single key, talk, and it handles everything:
+
+- records your voice;
+- transcribes it using a local Whisper model;
+- copies the text to your clipboard;
+- optionally pastes it directly into ChatGPT;
+- saves the audio and transcript into a clean, timestamped folder.
+
+This is ideal for:
+
+- code commentary,
+- journaling,
+- bug reporting,
+- voice-based chat prompting,
+- hands-free idea dumps.
+
+---
 
 ## ✨ Features
 
-- Live voice recording + real-time microphone level bar
-- Accurate transcription using `faster-whisper`
-- Clipboard copy automatically
-- Mode 2: paste into existing ChatGPT tab
-- Mode 3: open a new ChatGPT tab and paste
-- Mode 4: optionally use a local LLM to:
-  - enhance punctuation
-  - suggest a smart filename
-  - rename the recording folder
-- All recordings saved by default in: `recordings/YYYY-MM-DD/HH-MM-SS/`
-- Compatible with CUDA GPUs (⚠️ requires enough VRAM)
+- 🎤 Voice recording from a keypress (with visual feedback).
+- 🔠 Local Whisper transcription (via `faster-whisper`).
+- 📋 Automatically copies text to clipboard.
+- 🧠 [Optional] Local LLM cleanup & smart filename generation (via Ollama).
+- 💬 Paste directly into ChatGPT (existing or new tab).
+- 🗂️ Saved as daily folders with time-based subfolders (`recordings/YYYY-MM-DD/HH-MM-SS/`).
+- ⌨️ Can be launched with a **global keyboard shortcut**.
 
 ---
 
-## 🧪 Example
+## 🧰 Requirements
+
+Tested on **Ubuntu 22.04** with:
+
+- Python 3.10+
+- `faster-whisper` (for transcription)
+- `ollama` with a small model (e.g. `gemma:2b`) [optional]
+- `xdotool`, `ffmpeg`, `playsound`, `pyautogui`, `pyperclip`, `pynput`, `requests`
+
+---
+
+## 📦 Installation
+
+Create a fresh Python virtual environment:
 
 ```bash
-python3 voice_transcriber.py
+python3 -m venv ~/.virtualenvs/voice2chatgpt
+source ~/.virtualenvs/voice2chatgpt/bin/activate
+pip install -r requirements.txt
 ````
 
-You’ll see a mic bar, press a key 1–5 during recording:
+You may also need system packages:
 
-* `1`: Show result (default)
-* `2`: Paste into current ChatGPT tab (requires ChatGPT open)
-* `3`: Open ChatGPT and paste there
-* `4`: Enhance and rename with local LLM (work in progress)
-* `5`: Cancel (discard)
+```bash
+sudo apt install portaudio19-dev xdotool ffmpeg scrot
+```
 
-📋 Transcription is always copied to clipboard automatically.
+> Tip: If `playsound` gives warnings, ignore them or switch to a custom sound player.
 
 ---
 
-## 🖥️ Installation (Minimal Clean Environment)
+## 🧠 Optional: Local LLM setup
 
-### 1. Clone the repo
+To enable the text improvement and filename suggestion feature (mode 4):
 
-```bash
-git clone https://github.com/RemiFabre/voice2chatgpt
-cd voice2chatgpt
-```
+1. [Install Ollama](https://ollama.com/)
+2. Run:
 
-### 2. Create a clean Python virtual environment
+   ```bash
+   ollama run gemma:2b
+   ```
+3. Make sure `OLLAMA_URL` and `OLLAMA_MODEL` are configured in `voice_transcriber.py`.
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Install extra system tools (Ubuntu)
-
-```bash
-sudo apt install ffmpeg xdotool
-```
+If Ollama is not available, the script will still function normally (just without smart cleanup).
 
 ---
 
-## 🧠 Optional: Enable local LLM (for mode 4)
+## 🖱️ Launch with a Global Shortcut (Ubuntu only)
 
-### 1. Install Ollama
+You can launch the tool with a single shortcut from anywhere:
 
-Follow instructions at [https://ollama.com](https://ollama.com) to install and run the `ollama` server locally.
+1. Use the `run_transcriber.sh` file in this repo as a launcher.
 
-### 2. Download your model (recommended: `gemma:2b`)
+2. Edit the paths inside it:
 
-```bash
-ollama run gemma:2b
-```
+   ```bash
+   #!/bin/bash
+   source /home/YOUR_USER/.virtualenvs/voice2chatgpt/bin/activate
+   cd /home/YOUR_USER/path/to/voice2chatgpt
+   gnome-terminal -- bash -c 'python3 voice_transcriber.py; exec bash'
+   ```
 
-### 3. Leave the server running
+3. Make it executable:
 
-Run this in another terminal:
+   ```bash
+   chmod +x run_transcriber.sh
+   ```
 
-```bash
-ollama serve
-```
+4. Go to **Settings > Keyboard > Shortcuts**, add a **custom shortcut**:
 
----
+   * Name: `Voice2ChatGPT`
+   * Command: `/full/path/to/run_transcriber.sh`
+   * Shortcut: for example `Ctrl + Alt + U`
 
-## ⚠️ GPU Memory Notes
+That's it! From now on, pressing your chosen shortcut will open a terminal, start recording, and you can begin speaking immediately.
 
-Whisper (`medium`) and `gemma:2b` **both require GPU memory**. If you get CUDA out-of-memory errors, consider:
-
-* using Whisper in `cpu` mode
-* using smaller LLMs
-* disabling mode 4 (local LLM)
-
----
-
-## 🎧 Sounds
-
-This script uses WAV files (`sounds/plop.wav`) for feedback. Replace them with your own short audio cues if needed.
+> 🧠 Similar shortcut systems can be set up on other OSes using AutoHotKey (Windows) or Automator (macOS), but are not included in this guide.
 
 ---
 
-## 📦 Directory Structure
+## 🗃️ Folder Structure
 
-Each recording goes in:
+Each session is stored in:
 
 ```
-recordings/YYYY-MM-DD/HH-MM-SS/ 
-├── audio.wav
-└── transcript.txt
+recordings/
+  └── 2025-05-03/
+        └── 14-38-12/
+              ├── audio.wav
+              └── transcript.txt
 ```
 
-If mode 4 is used, the folder is renamed to include the smart name.
+If mode 4 is used, the folder will be renamed to include the suggested topic (e.g., `14-38-12_MercuryDashboardFix`).
 
 ---
 
-## 📝 requirements.txt
+## 🧪 Modes (choose after recording)
 
-Basic Python dependencies (already included):
+| Key | Action                               |
+| --- | ------------------------------------ |
+| 1   | Show transcription (default)         |
+| 2   | Paste into existing ChatGPT tab      |
+| 3   | Open ChatGPT and paste               |
+| 4   | Use local LLM to clean text & rename |
+| 5   | Cancel (discard all)                 |
 
-```
-sounddevice
-soundfile
-numpy
-pyautogui
-pyperclip
-faster-whisper
-playsound
-pynput
-requests
-```
-
-You can regenerate a clean one via:
-
-```bash
-pip freeze > requirements.txt
-```
+> Text is always copied to clipboard automatically.
 
 ---
 
-## 🔄 Reset
+## 🛠️ TODO / Known Limitations
 
-To delete all recordings:
+* Local LLM punctuation is optional, and may be slow on GPUs with limited VRAM.
+* Visual ChatGPT field detection relies on screenshots (may be fragile).
+* Currently Linux-only for automation features (xdotool, pyautogui).
 
-```bash
-rm -rf recordings/
-```
+---
+
+## 🧡 Credits
+
+* Whisper transcription by [faster-whisper](https://github.com/guillaumekln/faster-whisper)
+* Optional LLM via [Ollama](https://ollama.com/)
+* ChatGPT integration via Firefox + xdotool
