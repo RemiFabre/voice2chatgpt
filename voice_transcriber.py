@@ -107,8 +107,6 @@ def transcribe_audio(filename):
     else:
         rtf = (end - start) / duration_sec
 
-    print("📝 Transcription complete.\n")
-    print(text)
     print("\n📊 Stats:")
     print(f" - Input duration       : {duration_sec:.2f} seconds")
     print(f" - Real-time factor     : {rtf:.2f}x")
@@ -175,9 +173,11 @@ def post_transcription_menu(text):
         choice = input("Choose (1–5): ").strip()
         action_chosen = int(choice) if choice in '12345' else 1
 
+    print("\n📄 Transcription:\n")
+    print(text)
+    print()
     if action_chosen == 1:
-        print("\n📄 Transcription:\n")
-        print(text)
+        pass    
     elif action_chosen == 2:
         send_to_chatgpt(text)
     elif action_chosen == 3:
@@ -191,8 +191,6 @@ def post_transcription_menu(text):
             os.remove(TRANSCRIPTION_FILENAME)
         except FileNotFoundError:
             pass
-
-    input("\n✅ Press Enter to close this window...")
 
 def main():
     if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
