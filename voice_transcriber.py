@@ -8,12 +8,11 @@ import time
 import webbrowser
 import pyperclip
 import pyautogui
+import subprocess
 from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
 from playsound import playsound
 import sys
-import pyautogui
-
 
 # === CONFIG ===
 SAMPLE_RATE = 16000
@@ -24,6 +23,7 @@ MODEL_SIZE = "medium"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 MIC_BAR_WIDTH = 30
+CHATGPT_ICON_IMAGE = "assets/chatgpt_plus.jpeg"
 
 # === Globals ===
 recording = True
@@ -44,11 +44,11 @@ USAGE:
 NOTES:
 - Press 1–5 during recording to choose action:
     1: Show transcription
-    2: Paste to existing ChatGPT tab
-    3: Open new ChatGPT tab and paste
+    2: Paste into ChatGPT (existing tab)
+    3: Open ChatGPT and paste
     4: Save and exit
     5: Cancel
-- 📋 All modes copy the text to your clipboard automatically.
+- 📋 Text will always be copied to clipboard automatically.
 """)
 
 def audio_callback(indata, frames, time_info, status):
@@ -94,6 +94,25 @@ def record_audio(filename):
                 print("\r" + " " * (MIC_BAR_WIDTH + 20), end="\r", flush=True)
                 print("\n🎤 Recording stopped.")
 
+def focus_and_click_chatgpt_input(timeout=5):
+    try:
+        import pyautogui
+        print("🔍 Looking for '+' icon to focus input...")
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            location = pyautogui.locateOnScreen(CHATGPT_ICON_IMAGE, confidence=0.85)
+            if location:
+                center = pyautogui.center(location)
+                pyautogui.click(center.x, center.y - 40)  # click above the plus
+                print("✅ Focused input box.")
+                return True
+            time.sleep(0.1)
+        print("❌ '+' icon not found.")
+        return False
+    except Exception as e:
+        print(f"⚠️ Input focus failed: {e}")
+        return False
+
 def transcribe_audio(filename):
     print("🧠 Transcribing...")
     model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
@@ -125,18 +144,29 @@ def transcribe_audio(filename):
     return text
 
 def send_to_existing_chatgpt(text):
-    print("📨 Pasting into current ChatGPT tab...")
-    pyautogui.hotkey("ctrl", "v")
-    time.sleep(0.2)
-    pyautogui.press("enter")
+    print("📨 Focusing Firefox window...")
+    try:
+        subprocess.call(['xdotool', 'search', '--onlyvisible', '--class', 'firefox', 'windowactivate'])
+        time.sleep(0.4)
+        if focus_and_click_chatgpt_input(timeout=5):
+            pyautogui.hotkey("ctrl", "v")
+            time.sleep(0.2)
+            # pyautogui.press("enter")
+        else:
+            print("⚠️ Could not find ChatGPT input box. Message not sent.")
+    except Exception as e:
+        print(f"❌ Failed to interact with Firefox: {e}")
 
 def send_to_new_chatgpt(text):
-    print("🌐 Opening ChatGPT and pasting text...")
+    print("🌐 Opening ChatGPT...")
     webbrowser.get("firefox").open_new_tab("https://chat.openai.com/")
     time.sleep(2.5)
+    found = focus_and_click_chatgpt_input(timeout=5)
     pyautogui.hotkey("ctrl", "v")
     time.sleep(0.2)
-    pyautogui.press("enter")
+    # pyautogui.press("enter")
+    if not found:
+        print("⚠️ Input box not detected, pasted anyway.")
 
 def handle_key_input_during_recording():
     global action_chosen, recording
@@ -144,24 +174,16 @@ def handle_key_input_during_recording():
     def on_press(key):
         global action_chosen, recording
         k_repr = repr(key)
-
-        key_map = {
-            '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
-        }
-
+        key_map = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5}
         if hasattr(key, 'char') and key.char in key_map:
             action_chosen = key_map[key.char]
             recording = False
             return
-
         if k_repr in ['<65437>']:
             action_chosen = 5
             recording = False
             return
-
-        vk_map = {
-            97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5
-        }
+        vk_map = {97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5}
         if hasattr(key, 'vk') and key.vk in vk_map:
             action_chosen = vk_map[key.vk]
             recording = False
@@ -201,19 +223,6 @@ def post_transcription_menu(text):
             os.remove(TRANSCRIPTION_FILENAME)
         except FileNotFoundError:
             pass
-
-
-def click_chatgpt_input(image_path="assets/chatgpt_input.png", timeout=10):
-    print("🔍 Looking for ChatGPT input box...")
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        location = pyautogui.locateCenterOnScreen(image_path, confidence=0.8)
-        if location:
-            pyautogui.click(location)
-            return True
-        time.sleep(0.5)
-    print("❌ ChatGPT input box not found.")
-    return False
 
 def main():
     if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
