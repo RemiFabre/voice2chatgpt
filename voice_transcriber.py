@@ -2,7 +2,6 @@ import sounddevice as sd
 import soundfile as sf
 import numpy as np
 import os
-import sys
 import threading
 import queue
 import time
@@ -12,6 +11,7 @@ import pyautogui
 from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
 from playsound import playsound
+import sys
 
 # === CONFIG ===
 SAMPLE_RATE = 16000
@@ -30,6 +30,23 @@ start_time = None
 action_chosen = None
 callback_enabled = True
 
+def print_help():
+    print("""
+🎙️ voice_transcriber.py - Record or transcribe voice audio using Whisper
+
+USAGE:
+  python3 voice_transcriber.py                   # Start recording interactively
+  python3 voice_transcriber.py <audio_file.wav>  # Transcribe existing file (no recording)
+  python3 voice_transcriber.py --help            # Show this help message
+
+NOTES:
+- Press 1–5 during recording to choose action:
+    1: Show transcription
+    2: Send to ChatGPT (autotype)
+    3: Copy to clipboard
+    4: Save and exit
+    5: Cancel
+""")
 
 def audio_callback(indata, frames, time_info, status):
     global callback_enabled
@@ -39,8 +56,7 @@ def audio_callback(indata, frames, time_info, status):
     level = min(int(volume_norm * 100 * MIC_BAR_WIDTH), MIC_BAR_WIDTH)
     bar = "█" * level + " " * (MIC_BAR_WIDTH - level)
     elapsed = time.time() - start_time if start_time else 0
-    print(f"\r🎙️ {elapsed:5.1f}s [{bar}]", end="", flush=True)
-
+    print(f"\r🎤 {elapsed:5.1f}s [{bar}]", end="", flush=True)
 
 def record_audio(filename):
     global duration_sec, recording, callback_enabled, start_time
@@ -75,7 +91,6 @@ def record_audio(filename):
                 print("\r" + " " * (MIC_BAR_WIDTH + 20), end="\r", flush=True)
                 print("\n🎤 Recording stopped.")
 
-
 def transcribe_audio(filename):
     print("🧠 Transcribing...")
     model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
@@ -83,13 +98,15 @@ def transcribe_audio(filename):
     segments, info = model.transcribe(filename, beam_size=5, best_of=5)
     end = time.time()
     text = " ".join([seg.text for seg in segments])
+
+    global duration_sec
     if duration_sec == 0:
-        import soundfile as sf
         with sf.SoundFile(filename) as f:
             file_duration = len(f) / f.samplerate
         rtf = (end - start) / file_duration
     else:
         rtf = (end - start) / duration_sec
+
     print("📝 Transcription complete.\n")
     print(text)
     print("\n📊 Stats:")
@@ -101,7 +118,6 @@ def transcribe_audio(filename):
     with open(TRANSCRIPTION_FILENAME, "w") as f:
         f.write(text)
     return text
-
 
 def send_to_chatgpt(text):
     print("🌐 Opening ChatGPT and pasting text...")
@@ -124,19 +140,16 @@ def handle_key_input_during_recording():
             '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
         }
 
-        # Char-based keys
         if hasattr(key, 'char') and key.char in key_map:
             action_chosen = key_map[key.char]
             recording = False
             return
 
-        # Raw repr fallback (for AZERTY '5')
         if k_repr in ['<65437>']:
             action_chosen = 5
             recording = False
             return
 
-        # vk fallback for numpad/others
         vk_map = {
             97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5
         }
@@ -149,7 +162,6 @@ def handle_key_input_during_recording():
     while recording:
         time.sleep(0.05)
     listener.stop()
-
 
 def post_transcription_menu(text):
     global action_chosen
@@ -172,7 +184,7 @@ def post_transcription_menu(text):
         pyperclip.copy(text)
         print("📋 Copied to clipboard.")
     elif action_chosen == 4:
-        print("💾 Saved and done.")
+        print("📅 Saved and done.")
     elif action_chosen == 5:
         print("❌ Discarded.")
         try:
@@ -180,39 +192,18 @@ def post_transcription_menu(text):
         except FileNotFoundError:
             pass
 
-
-def print_help():
-    print("""
-🎙️ voice_transcriber.py - Record or transcribe voice audio using Whisper
-
-USAGE:
-  python3 voice_transcriber.py                   # Start recording interactively
-  python3 voice_transcriber.py <audio_file.wav>  # Transcribe existing file (no recording)
-  python3 voice_transcriber.py --help            # Show this help message
-
-NOTES:
-- Press 1–5 during recording to choose action:
-    1: Show transcription
-    2: Send to ChatGPT (autotype)
-    3: Copy to clipboard
-    4: Save and exit
-    5: Cancel
-""")
-
+    input("\n✅ Press Enter to close this window...")
 
 def main():
-    # If --help or -h or too many args
     if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
         print_help()
         return
 
-    # If user provides an audio file to transcribe directly
     if len(sys.argv) == 2 and os.path.isfile(sys.argv[1]):
         text = transcribe_audio(sys.argv[1])
         post_transcription_menu(text)
         return
 
-    # Default interactive recording flow
     recorder = threading.Thread(target=record_audio, args=(RECORDING_FILENAME,))
     hotkeys = threading.Thread(target=handle_key_input_during_recording)
     recorder.start()
@@ -226,7 +217,6 @@ def main():
             return
         text = transcribe_audio(RECORDING_FILENAME)
         post_transcription_menu(text)
-
 
 if __name__ == "__main__":
     main()
