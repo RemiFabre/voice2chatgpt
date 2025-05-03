@@ -1,178 +1,151 @@
-# voice2chatgpt (Whisper + Hotkey + ChatGPT)
+# 🎙️ voice2chatgpt
 
-This project turns your computer into a hotkey-triggered voice transcriber powered by Whisper. It captures your speech with a single keyboard shortcut, transcribes it locally using Whisper (via Faster-Whisper), and displays the result in the terminal or sends it to ChatGPT. It's designed to work fully offline and fast.
+**voice2chatgpt** is a voice-to-text transcription and interaction assistant powered by Whisper and optionally a local LLM (like `gemma:2b` via Ollama). It copies transcriptions to the clipboard and can optionally interact with ChatGPT.
 
-## Features
+## ✨ Features
 
-* Hotkey-triggered recording
-* Local Whisper transcription (via Faster-Whisper)
-* Real-time mic level bar in terminal + live duration
-* Press keys `1`–`5` during or after recording to choose what to do:
-  * `1` – Show transcription
-  * `2` – Send to ChatGPT (opens Firefox, pastes & submits)
-  * `3` – Copy to clipboard
-  * `4` – Save and exit
-  * `5` – Cancel and discard
-* Live keypress debug display (shows unknown key codes)
-* Compatible with QWERTY, AZERTY, and numpad layouts
-* Optionally normalize text (punctuation & casing)
+- Live voice recording + real-time microphone level bar
+- Accurate transcription using `faster-whisper`
+- Clipboard copy automatically
+- Mode 2: paste into existing ChatGPT tab
+- Mode 3: open a new ChatGPT tab and paste
+- Mode 4: optionally use a local LLM to:
+  - enhance punctuation
+  - suggest a smart filename
+  - rename the recording folder
+- All recordings saved by default in: `recordings/YYYY-MM-DD/HH-MM-SS/`
+- Compatible with CUDA GPUs (⚠️ requires enough VRAM)
 
 ---
 
-## 🔧 Installation (Linux)
+## 🧪 Example
+
+```bash
+python3 voice_transcriber.py
+````
+
+You’ll see a mic bar, press a key 1–5 during recording:
+
+* `1`: Show result (default)
+* `2`: Paste into current ChatGPT tab (requires ChatGPT open)
+* `3`: Open ChatGPT and paste there
+* `4`: Enhance and rename with local LLM (work in progress)
+* `5`: Cancel (discard)
+
+📋 Transcription is always copied to clipboard automatically.
+
+---
+
+## 🖥️ Installation (Minimal Clean Environment)
 
 ### 1. Clone the repo
 
 ```bash
-git clone git@github.com:RemiFabre/voice2chatgpt.git
+git clone https://github.com/RemiFabre/voice2chatgpt
 cd voice2chatgpt
-````
+```
 
-### 2. Create and activate virtual environment
+### 2. Create a clean Python virtual environment
 
 ```bash
-python3 -m venv ~/.virtualenvs/whisper
-source ~/.virtualenvs/whisper/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 ### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
-# or, manually:
-pip install faster-whisper sounddevice soundfile numpy pynput pyperclip pyautogui
 ```
 
-> ⚠️ Optional: If you want to enable normalization (not that useful):
+### 4. Install extra system tools (Ubuntu)
 
 ```bash
-pip install git+https://github.com/openai/whisper.git
+sudo apt install ffmpeg xdotool
 ```
 
 ---
 
-## 🎙️ Running the tool manually
+## 🧠 Optional: Enable local LLM (for mode 4)
 
-From inside your virtualenv:
+### 1. Install Ollama
+
+Follow instructions at [https://ollama.com](https://ollama.com) to install and run the `ollama` server locally.
+
+### 2. Download your model (recommended: `gemma:2b`)
 
 ```bash
-python voice_transcriber.py
+ollama run gemma:2b
 ```
 
-Then just talk. The script will show your mic level and elapsed time.
-Press `1`–`5` *during* or *after* the recording to:
+### 3. Leave the server running
 
-* Show transcription
-* Send it to ChatGPT (in Firefox)
-* Copy to clipboard
-* Save
-* Cancel
-
-You can also transcribe an existing `.wav` file:
+Run this in another terminal:
 
 ```bash
-python voice_transcriber.py --file your_audio.wav
+ollama serve
 ```
 
 ---
 
-## ⌨️ Set up a global hotkey (Ubuntu/Linux)
+## ⚠️ GPU Memory Notes
 
-### 1. Create a shell launcher
+Whisper (`medium`) and `gemma:2b` **both require GPU memory**. If you get CUDA out-of-memory errors, consider:
 
-Modify `run_transcriber.sh` to fit your path.
+* using Whisper in `cpu` mode
+* using smaller LLMs
+* disabling mode 4 (local LLM)
 
-Make it executable:
+---
+
+## 🎧 Sounds
+
+This script uses WAV files (`sounds/plop.wav`) for feedback. Replace them with your own short audio cues if needed.
+
+---
+
+## 📦 Directory Structure
+
+Each recording goes in:
+
+```
+recordings/YYYY-MM-DD/HH-MM-SS/ 
+├── audio.wav
+└── transcript.txt
+```
+
+If mode 4 is used, the folder is renamed to include the smart name.
+
+---
+
+## 📝 requirements.txt
+
+Basic Python dependencies (already included):
+
+```
+sounddevice
+soundfile
+numpy
+pyautogui
+pyperclip
+faster-whisper
+playsound
+pynput
+requests
+```
+
+You can regenerate a clean one via:
 
 ```bash
-chmod +x ~/voice2chatgpt/run_transcriber.sh
+pip freeze > requirements.txt
 ```
 
-### 2. (optional) Create a desktop shortcut
+---
 
-Create the file:
+## 🔄 Reset
+
+To delete all recordings:
 
 ```bash
-~/.local/share/applications/voice-transcriber.desktop
+rm -rf recordings/
 ```
-
-With content (adapt Exec path):
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Voice Transcriber
-Exec=/home/remi/voice2chatgpt/run_transcriber.sh
-Icon=utilities-terminal
-Terminal=true
-```
-
-Then update your local desktop database:
-
-```bash
-update-desktop-database ~/.local/share/applications
-```
-
-### 3. Bind the shortcut
-
-Go to:
-
-```
-Settings → Keyboard → Custom Shortcuts
-```
-
-Add (adapt command path):
-
-* Name: `Voice Transcriber`
-* Command: `/home/remi/voice2chatgpt/run_transcriber.sh`
-* Shortcut: for example, `Ctrl+Alt+Space`
-
----
-
-## 🛠️ Configurable options
-
-In `voice_transcriber.py`:
-
-* `MODEL_SIZE`: Change from `"medium"` to `"small"` for faster speed
-* `USE_NORMALIZER`: Set to `True` to clean punctuation and casing
-* `SAMPLE_RATE`, `CHANNELS`: Customize recording fidelity
-* `MIC_BAR_WIDTH`: Width of the real-time mic bar
-
----
-
-## 🧪 Notes
-
-* Output is saved in `transcription.txt`
-* Input audio is saved as `recorded.wav`
-* Works even offline (if models are pre-cached)
-* Prints real-time factor and durations
-* On unknown keyboard layouts, raw key codes like `<65437>` are printed — you can add support easily by extending `key_map`
-
----
-
-## 🧼 .gitignore recommendation
-
-Include:
-
-```
-*.wav
-*.txt
-voice_log.txt
-```
-
----
-
-## ✅ Tested With
-
-* Ubuntu 22.04 LTS
-* Python 3.10
-* NVIDIA GPU (CUDA-accelerated Faster-Whisper)
-* AZERTY & QWERTY keyboard layouts
-* Firefox (for ChatGPT integration)
-* Terminal: Terminator or Gnome Terminal
-
----
-
-## License
-
-MIT
