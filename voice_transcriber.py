@@ -13,12 +13,11 @@ from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
 from playsound import playsound
 import sys
+from datetime import datetime
 
 # === CONFIG ===
 SAMPLE_RATE = 16000
 CHANNELS = 1
-RECORDING_FILENAME = "recorded.wav"
-TRANSCRIPTION_FILENAME = "transcription.txt"
 MODEL_SIZE = "medium"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
@@ -31,6 +30,19 @@ duration_sec = 0
 start_time = None
 action_chosen = None
 callback_enabled = True
+RECORDING_FILENAME = "recorded.wav"  # fallback only
+TRANSCRIPTION_FILENAME = "transcription.txt"
+current_audio_path = None
+current_transcript_path = None
+
+def generate_paths():
+    now = datetime.now()
+    base_folder = os.path.join("recordings", now.strftime("%Y-%m-%d"), now.strftime("%H-%M-%S"))
+    os.makedirs(base_folder, exist_ok=True)
+    global current_audio_path, current_transcript_path
+    current_audio_path = os.path.join(base_folder, "audio.wav")
+    current_transcript_path = os.path.join(base_folder, "transcript.txt")
+    return current_audio_path
 
 def print_help():
     print("""
@@ -96,14 +108,13 @@ def record_audio(filename):
 
 def focus_and_click_chatgpt_input(timeout=5):
     try:
-        import pyautogui
         print("🔍 Looking for '+' icon to focus input...")
         start_time = time.time()
         while time.time() - start_time < timeout:
             location = pyautogui.locateOnScreen(CHATGPT_ICON_IMAGE, confidence=0.85)
             if location:
                 center = pyautogui.center(location)
-                pyautogui.click(center.x, center.y - 40)  # click above the plus
+                pyautogui.click(center.x, center.y - 40)
                 print("✅ Focused input box.")
                 return True
             time.sleep(0.1)
@@ -120,12 +131,12 @@ def transcribe_audio(filename):
     segments, info = model.transcribe(filename, beam_size=5, best_of=5)
     end = time.time()
     text = " ".join([seg.text for seg in segments])
-    
+
     pyperclip.copy(text)
     print("📋 Copied to clipboard.")
     playsound("sounds/plop.wav")
 
-    global duration_sec
+    global duration_sec, current_transcript_path
     if duration_sec == 0:
         with sf.SoundFile(filename) as f:
             file_duration = len(f) / f.samplerate
@@ -138,8 +149,8 @@ def transcribe_audio(filename):
     print(f" - Real-time factor     : {rtf:.2f}x")
     print(f" - Transcription time   : {end - start:.2f} seconds")
     print(f" - Output text length   : {len(text)} characters")
-    print(f" - Saved to             : {TRANSCRIPTION_FILENAME}")
-    with open(TRANSCRIPTION_FILENAME, "w") as f:
+    print(f" - Saved to             : {current_transcript_path}")
+    with open(current_transcript_path, "w") as f:
         f.write(text)
     return text
 
@@ -147,11 +158,11 @@ def send_to_existing_chatgpt(text):
     print("📨 Focusing Firefox window...")
     try:
         subprocess.call(['xdotool', 'search', '--onlyvisible', '--class', 'firefox', 'windowactivate'])
-        time.sleep(0.4)
+        time.sleep(0.2)
         if focus_and_click_chatgpt_input(timeout=5):
             pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.2)
-            # pyautogui.press("enter")
+            time.sleep(0.1)
+            pyautogui.press("enter")
         else:
             print("⚠️ Could not find ChatGPT input box. Message not sent.")
     except Exception as e:
@@ -160,11 +171,13 @@ def send_to_existing_chatgpt(text):
 def send_to_new_chatgpt(text):
     print("🌐 Opening ChatGPT...")
     webbrowser.get("firefox").open_new_tab("https://chat.openai.com/")
-    time.sleep(2.5)
     found = focus_and_click_chatgpt_input(timeout=5)
+    time.sleep(0.5)
+    
+        
     pyautogui.hotkey("ctrl", "v")
     time.sleep(0.2)
-    # pyautogui.press("enter")
+    pyautogui.press("enter")
     if not found:
         print("⚠️ Input box not detected, pasted anyway.")
 
@@ -173,19 +186,12 @@ def handle_key_input_during_recording():
 
     def on_press(key):
         global action_chosen, recording
-        k_repr = repr(key)
         key_map = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5}
         if hasattr(key, 'char') and key.char in key_map:
             action_chosen = key_map[key.char]
             recording = False
-            return
-        if k_repr in ['<65437>']:
-            action_chosen = 5
-            recording = False
-            return
-        vk_map = {97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5}
-        if hasattr(key, 'vk') and key.vk in vk_map:
-            action_chosen = vk_map[key.vk]
+        elif hasattr(key, 'vk') and key.vk in {97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5}:
+            action_chosen = {97: 1, 98: 2, 99: 3, 100: 4, 101: 5, 53: 5, 229: 5}[key.vk]
             recording = False
 
     listener = pynput_keyboard.Listener(on_press=on_press)
@@ -210,7 +216,7 @@ def post_transcription_menu(text):
     print(text)
     print()
     if action_chosen == 1:
-        pass    
+        pass
     elif action_chosen == 2:
         send_to_existing_chatgpt(text)
     elif action_chosen == 3:
@@ -220,7 +226,8 @@ def post_transcription_menu(text):
     elif action_chosen == 5:
         print("❌ Discarded.")
         try:
-            os.remove(TRANSCRIPTION_FILENAME)
+            os.remove(current_audio_path)
+            os.remove(current_transcript_path)
         except FileNotFoundError:
             pass
 
@@ -230,22 +237,24 @@ def main():
         return
 
     if len(sys.argv) == 2 and os.path.isfile(sys.argv[1]):
+        generate_paths()
         text = transcribe_audio(sys.argv[1])
         post_transcription_menu(text)
         return
 
-    recorder = threading.Thread(target=record_audio, args=(RECORDING_FILENAME,))
+    filename = generate_paths()
+    recorder = threading.Thread(target=record_audio, args=(filename,))
     hotkeys = threading.Thread(target=handle_key_input_during_recording)
     recorder.start()
     hotkeys.start()
     recorder.join()
     hotkeys.join()
 
-    if os.path.exists(RECORDING_FILENAME):
+    if os.path.exists(filename):
         if action_chosen == 5:
             print("❌ Aborted before transcription.")
             return
-        text = transcribe_audio(RECORDING_FILENAME)
+        text = transcribe_audio(filename)
         post_transcription_menu(text)
 
 if __name__ == "__main__":
