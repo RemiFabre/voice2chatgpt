@@ -12,6 +12,8 @@ from pynput import keyboard as pynput_keyboard
 from faster_whisper import WhisperModel
 from playsound import playsound
 import sys
+import pyautogui
+
 
 # === CONFIG ===
 SAMPLE_RATE = 16000
@@ -42,10 +44,11 @@ USAGE:
 NOTES:
 - Press 1–5 during recording to choose action:
     1: Show transcription
-    2: Send to ChatGPT (autotype)
-    3: Copy to clipboard
+    2: Paste to existing ChatGPT tab
+    3: Open new ChatGPT tab and paste
     4: Save and exit
     5: Cancel
+- 📋 All modes copy the text to your clipboard automatically.
 """)
 
 def audio_callback(indata, frames, time_info, status):
@@ -72,11 +75,11 @@ def record_audio(filename):
             print("\n🎤 Recording started.")
             print("Press:")
             print("  1 – Show transcription")
-            print("  2 – Send to ChatGPT")
-            print("  3 – Copy to clipboard")
+            print("  2 – Paste into ChatGPT (existing tab)")
+            print("  3 – Open ChatGPT and paste")
             print("  4 – Save and exit")
             print("  5 – Cancel (discard and stop immediately)")
-            print("All modes copy the text to your clipboard\n")
+            print("📋 Text will always be copied to clipboard.\n")
 
             start_time = time.time()
             try:
@@ -121,11 +124,16 @@ def transcribe_audio(filename):
         f.write(text)
     return text
 
-def send_to_chatgpt(text):
+def send_to_existing_chatgpt(text):
+    print("📨 Pasting into current ChatGPT tab...")
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.2)
+    pyautogui.press("enter")
+
+def send_to_new_chatgpt(text):
     print("🌐 Opening ChatGPT and pasting text...")
     webbrowser.get("firefox").open_new_tab("https://chat.openai.com/")
-    time.sleep(5)
-    pyperclip.copy(text)
+    time.sleep(2.5)
     pyautogui.hotkey("ctrl", "v")
     time.sleep(0.2)
     pyautogui.press("enter")
@@ -136,7 +144,6 @@ def handle_key_input_during_recording():
     def on_press(key):
         global action_chosen, recording
         k_repr = repr(key)
-        # print(f"\n🔍 Pressed key: {k_repr}")
 
         key_map = {
             '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
@@ -170,8 +177,8 @@ def post_transcription_menu(text):
     if action_chosen is None:
         print("\nWhat would you like to do?")
         print("1. Show transcription (default)")
-        print("2. Send to ChatGPT")
-        print("3. Copy to clipboard")
+        print("2. Paste into ChatGPT (existing tab)")
+        print("3. Open ChatGPT and paste")
         print("4. Save and exit")
         print("5. Cancel (discard)")
         choice = input("Choose (1–5): ").strip()
@@ -183,10 +190,9 @@ def post_transcription_menu(text):
     if action_chosen == 1:
         pass    
     elif action_chosen == 2:
-        send_to_chatgpt(text)
+        send_to_existing_chatgpt(text)
     elif action_chosen == 3:
-        pyperclip.copy(text)
-        print("📋 Copied to clipboard.")
+        send_to_new_chatgpt(text)
     elif action_chosen == 4:
         print("📅 Saved and done.")
     elif action_chosen == 5:
@@ -195,6 +201,19 @@ def post_transcription_menu(text):
             os.remove(TRANSCRIPTION_FILENAME)
         except FileNotFoundError:
             pass
+
+
+def click_chatgpt_input(image_path="assets/chatgpt_input.png", timeout=10):
+    print("🔍 Looking for ChatGPT input box...")
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        location = pyautogui.locateCenterOnScreen(image_path, confidence=0.8)
+        if location:
+            pyautogui.click(location)
+            return True
+        time.sleep(0.5)
+    print("❌ ChatGPT input box not found.")
+    return False
 
 def main():
     if len(sys.argv) > 2 or (len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]):
