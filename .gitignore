@@ -57,7 +57,7 @@ coverage.xml
 
 # Transcriptions
 *.wav
-*.txt
+recordings/
 
 # Jupyter Notebook
 .ipynb_checkpoints
